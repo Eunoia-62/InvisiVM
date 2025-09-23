@@ -1,3 +1,10 @@
+/*
+* Copyright (c) [2025] [Eunoia-62]. All rights reserved.
+* This file is part of [InvisiVM].
+*/
+
+
+
 #define UNICODE           // Enable Unicode support for wide character strings (wchar_t)
 #include <windows.h>      // Core Windows API functions and types
 #include <windowsx.h>     // Extended Windows macros (GET_X_LPARAM, GET_Y_LPARAM)
@@ -771,4 +778,5 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         MessageBoxA(NULL, "Unexpected error occurred", "Fatal Error", MB_OK | MB_ICONERROR);
         return -1;  // Exit with error code
     }
+
 }
