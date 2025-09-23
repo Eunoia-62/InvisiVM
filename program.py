@@ -1,3 +1,8 @@
+#
+# Copyright (c) [2025] [Eunoia-62]. All rights reserved.
+#This file is part of [InvisiVM].
+#
+
 import sys
 from pypdf import PdfReader
 
@@ -17,4 +22,5 @@ def extract_pdf_text(pdf_path):
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
+
         extract_pdf_text(sys.argv[1])
