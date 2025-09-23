@@ -1,0 +1,7 @@
+Windows Registry Editor Version 5.00
+
+[HKEY_CLASSES_ROOT\SystemFileAssociations\.pdf\shell\OpenWithEmptyApp]
+@="Open with EmptyApp"
+
+[HKEY_CLASSES_ROOT\SystemFileAssociations\.pdf\shell\OpenWithEmptyApp\command]
+@="\"C:\\Users\\jena\\OneDrive\\Desktop\\app work pj\\emptyapp.exe\" \"%1\""
