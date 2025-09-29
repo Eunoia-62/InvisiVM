@@ -167,7 +167,12 @@ int g_hoveredButton = -1;                    // Index of currently hovered butto
 int g_clickedButton = -1;                    // Index of button being clicked (-1 = none)
 HWND g_hwnd = NULL;                          // Handle to the main window (needed for updates)
 std::string g_extractedText = "No PDF loaded. Right-click a PDF file and select 'Open with EmptyApp' to view content.";  // Store extracted PDF text
-
+// Scrolling variables for custom text display
+int g_scrollPos = 0;                         // Current scroll position (line number)
+int g_maxScrollPos = 0;                      // Maximum scroll position
+int g_pageSize = 10;                         // Lines visible per page
+int g_lineHeight = 16;                       // Height of each text line in pixels
+std::vector<std::string> g_textLines;        // Store text split into individual lines
 // These functions handle the business logic of button management
 
 // Creates and initializes the three control buttons
@@ -223,11 +228,22 @@ void ProcessPDFFile(const char* pdfPath) {
                 buffer << file.rdbuf();
                 g_extractedText = buffer.str();
                 file.close();
+                
+                // Split text into lines for scrolling
+                std::stringstream ss(g_extractedText);
+                std::string line;
+                g_textLines.clear();
+                while (std::getline(ss, line)) {
+                    g_textLines.push_back(line);
+                }
+                
+                // Update scroll range
+                g_maxScrollPos = g_textLines.size() - g_pageSize;
+                if (g_maxScrollPos < 0) g_maxScrollPos = 0;
+                
             } else {
                 g_extractedText = "Error: Text file not found.";
             }
-        } else {
-            g_extractedText = "Python script failed.";
         }
         
         if (g_hwnd) {
@@ -345,7 +361,7 @@ void HandleButtonClick(int buttonIndex) {
                 // Minimize the window to the taskbar
                 ShowWindow(g_hwnd, SW_MINIMIZE);
                 // Update window title to indicate state (optional feedback)
-                SetWindowTextA(g_hwnd, "PDF Viewer - Minimized");
+                SetWindowTextA(g_hwnd, "InvisVM");
                 break;
                 
             case 2: // Green button - Maximize or Restore window
@@ -353,11 +369,11 @@ void HandleButtonClick(int buttonIndex) {
                 if (IsZoomed(g_hwnd)) {
                     // Window is maximized, so restore to normal size
                     ShowWindow(g_hwnd, SW_RESTORE);
-                    SetWindowTextA(g_hwnd, "PDF Viewer - Restored");
+                    SetWindowTextA(g_hwnd, "InvisVM");
                 } else {
                     // Window is normal size, so maximize it
                     ShowWindow(g_hwnd, SW_MAXIMIZE);
-                    SetWindowTextA(g_hwnd, "PDF Viewer - Maximized");
+                    SetWindowTextA(g_hwnd, "InvisVM");
                 }
                 break;
         }
@@ -485,7 +501,7 @@ void DrawStatusBar(HDC hdc, const RECT& clientRect) {
         SetBkMode(hdc, TRANSPARENT);            // Don't draw text background
         
         // Draw instruction text centered in the status bar
-        const char* instructions = "PDF Viewer - Right-click any PDF file and select 'Open with EmptyApp'";
+        const char* instructions = "VM Running";
         DrawTextA(hdc, instructions, -1, &statusRect, 
                  DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         
@@ -500,27 +516,37 @@ void DrawStatusBar(HDC hdc, const RECT& clientRect) {
 //   clientRect - Current window client rectangle
 void DrawPDFContent(HDC hdc, const RECT& clientRect) {
     try {
-        // Define rectangle for content area (between status bar and button bar)
         RECT contentRect = clientRect;
-        contentRect.top += 35;                    // Below status bar
-        contentRect.bottom -= BAR_HEIGHT + 5;    // Above button bar
-        contentRect.left += 10;                  // Left margin
-        contentRect.right -= 10;                 // Right margin
+        contentRect.top += 35;
+        contentRect.bottom -= BAR_HEIGHT + 5;
+        contentRect.left += 10;
+        contentRect.right -= 30;  // Leave space for scrollbar
         
-        // Set up text drawing properties
-        SetTextColor(hdc, RGB(240, 240, 240));  // Light text
-        SetBkMode(hdc, TRANSPARENT);             // Transparent background
+        SetTextColor(hdc, RGB(240, 240, 240));
+        SetBkMode(hdc, TRANSPARENT);
         
-        // Draw the extracted PDF text with word wrapping
-        DrawTextA(hdc, g_extractedText.c_str(), -1, &contentRect, 
-                 DT_LEFT | DT_TOP | DT_WORDBREAK);
+        // Split text into lines if not already done
+        if (g_textLines.empty() && !g_extractedText.empty()) {
+            std::stringstream ss(g_extractedText);
+            std::string line;
+            while (std::getline(ss, line)) {
+                g_textLines.push_back(line);
+            }
+        }
         
-    }
-    catch (const std::exception& e) {
-        // Silent fail for rendering errors
+        // Draw visible lines
+        int visibleLines = (contentRect.bottom - contentRect.top) / g_lineHeight;
+        for (int i = 0; i < visibleLines && (g_scrollPos + i) < g_textLines.size(); i++) {
+            int y = contentRect.top + (i * g_lineHeight);
+            TextOutA(hdc, contentRect.left, y, 
+                    g_textLines[g_scrollPos + i].c_str(), 
+                    g_textLines[g_scrollPos + i].length());
+        }
+        
+    } catch (const std::exception& e) {
+        // Silent fail
     }
 }
-
 // This is the main message handler for the window - it receives and processes
 // all Windows messages sent to our window (mouse clicks, key presses, paint requests, etc.)
 //   hwnd - Handle to the window receiving the message
@@ -537,11 +563,16 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         
         // WINDOW CREATION
         case WM_CREATE:
-            // Window is being created - perform one-time initialization
-            g_hwnd = hwnd;           // Store window handle globally
-            InitializeButtons();     // Create the three control buttons
-            return 0;               // Success
+            g_hwnd = hwnd;
+            InitializeButtons();
             
+            // Create vertical scrollbar
+            SetScrollRange(hwnd, SB_VERT, 0, 100, FALSE);
+            SetScrollPos(hwnd, SB_VERT, 0, TRUE);
+            ShowScrollBar(hwnd, SB_VERT, TRUE);
+            
+            return 0;
+
         // WINDOW RESIZING
         case WM_SIZE:
             // Window size has changed - update button positions
@@ -658,11 +689,53 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             return 0;
 
         // WINDOW DESTRUCTION
-        case WM_DESTROY:
-            // Window is being destroyed - clean up and exit
-            PostQuitMessage(0);  // Tell Windows to end the message loop
-            return 0;
+        case WM_VSCROLL: {
+            int scrollRequest = LOWORD(wParam);
+            int newPos = g_scrollPos;
             
+            switch (scrollRequest) {
+                case SB_LINEUP:   newPos--; break;
+                case SB_LINEDOWN: newPos++; break;
+                case SB_PAGEUP:   newPos -= g_pageSize; break;
+                case SB_PAGEDOWN: newPos += g_pageSize; break;
+                case SB_THUMBTRACK: newPos = HIWORD(wParam); break;
+            }
+            
+            if (newPos < 0) newPos = 0;
+            if (newPos > g_maxScrollPos) newPos = g_maxScrollPos;
+            
+            if (newPos != g_scrollPos) {
+                g_scrollPos = newPos;
+                SetScrollPos(hwnd, SB_VERT, g_scrollPos, TRUE);
+                InvalidateRect(hwnd, NULL, FALSE);
+            }
+            return 0;
+        }
+        
+        case WM_MOUSEWHEEL: {
+            int delta = GET_WHEEL_DELTA_WPARAM(wParam);
+            int scrollLines = 3;  // Number of lines to scroll per wheel notch
+            
+            if (delta > 0) {
+                // Scroll up
+                g_scrollPos -= scrollLines;
+            } else {
+                // Scroll down  
+                g_scrollPos += scrollLines;
+            }
+            
+            // Clamp scroll position to valid range
+            if (g_scrollPos < 0) g_scrollPos = 0;
+            if (g_scrollPos > g_maxScrollPos) g_scrollPos = g_maxScrollPos;
+            
+            // Update scrollbar position
+            SetScrollPos(hwnd, SB_VERT, g_scrollPos, TRUE);
+            
+            // Redraw content
+            InvalidateRect(hwnd, NULL, FALSE);
+            return 0;
+        }
+
         // DEFAULT HANDLING
         default:
             // For all other messages, use Windows default processing
@@ -725,7 +798,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         HWND hwnd = CreateWindowEx(
             0,                          // Extended window styles (none)
             CLASS_NAME,                 // Window class name
-            L"PDF Viewer",              // Window title
+            L"InvisVM",              // Window title
             WS_OVERLAPPEDWINDOW,        // Standard window with title bar, borders, etc.
             CW_USEDEFAULT,              // X position (let Windows choose)
             CW_USEDEFAULT,              // Y position (let Windows choose)  
@@ -778,5 +851,4 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         MessageBoxA(NULL, "Unexpected error occurred", "Fatal Error", MB_OK | MB_ICONERROR);
         return -1;  // Exit with error code
     }
-
-}
+}    
